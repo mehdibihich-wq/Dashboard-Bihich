@@ -344,8 +344,104 @@ footer{margin-top:14px;padding:11px 14px;background:var(--card);border:1px solid
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 .kpi,.ocard,.alert{animation:fadeUp .3s ease both}
 </style>
+<style id="pin-style">
+/* ── PIN LOCK SCREEN ── */
+#pin-screen{
+  position:fixed;inset:0;z-index:9999;
+  background:var(--ink);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:32px 24px;
+  animation:none;
+}
+#pin-screen.unlocking{animation:fadeOut .4s ease forwards}
+@keyframes fadeOut{to{opacity:0;pointer-events:none;visibility:hidden}}
+
+.pin-logo{display:flex;align-items:center;gap:10px;margin-bottom:36px}
+.pin-logo-badge{background:var(--red);padding:10px 16px;border-radius:12px;
+  display:flex;align-items:center;gap:9px}
+.pin-logo-icon{width:30px;height:30px;border-radius:50%;background:var(--yellow);
+  display:flex;align-items:center;justify-content:center;
+  font-weight:900;font-size:16px;color:var(--red)}
+.pin-logo-txt{font-weight:700;font-size:13px;color:#fff;letter-spacing:.5px}
+
+.pin-title{font-size:20px;font-weight:700;color:var(--text);margin-bottom:6px;text-align:center}
+.pin-sub{font-size:13px;color:var(--text3);margin-bottom:32px;text-align:center}
+
+/* Dots display */
+.pin-dots{display:flex;gap:14px;margin-bottom:28px}
+.pin-dot{width:14px;height:14px;border-radius:50%;
+  border:2px solid var(--border2);background:transparent;
+  transition:all .2s cubic-bezier(.22,1,.36,1)}
+.pin-dot.filled{background:var(--yellow);border-color:var(--yellow);transform:scale(1.1)}
+.pin-dot.error{background:#FF7A7D;border-color:#FF7A7D;animation:shake .4s ease}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+
+/* Keypad */
+.pin-keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;width:100%;max-width:260px}
+.pin-key{
+  height:62px;border-radius:14px;border:1px solid var(--border2);
+  background:var(--ink3);color:var(--text);
+  font-size:22px;font-weight:600;cursor:pointer;
+  font-family:'DM Mono','Courier New',monospace;
+  display:flex;align-items:center;justify-content:center;
+  transition:all .15s;-webkit-tap-highlight-color:transparent;
+  user-select:none;
+}
+.pin-key:hover{background:var(--ink4);border-color:var(--border2)}
+.pin-key:active{transform:scale(.94);background:var(--slate)}
+.pin-key.del{font-size:18px;color:var(--text3)}
+.pin-key.del:active{color:var(--red)}
+.pin-key.empty{border:none;background:transparent;cursor:default;pointer-events:none}
+
+.pin-error-msg{
+  height:18px;margin-top:16px;
+  font-size:12px;color:#FF7A7D;font-weight:600;text-align:center;
+  opacity:0;transition:opacity .2s
+}
+.pin-error-msg.show{opacity:1}
+
+/* Radial glow behind lock screen */
+#pin-screen::before{
+  content:'';position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse 60% 40% at 50% 40%,rgba(221,29,33,.08) 0%,transparent 65%);
+}
+</style>
 </head>
 <body>
+
+<!-- PIN LOCK SCREEN -->
+<div id="pin-screen">
+  <div class="pin-logo">
+    <div class="pin-logo-badge">
+      <div class="pin-logo-icon">S</div>
+      <span class="pin-logo-txt">SHELL LUBES</span>
+    </div>
+  </div>
+  <div class="pin-title">Dashboard Commercial</div>
+  <div class="pin-sub">Entrez votre code PIN pour accéder</div>
+  <div class="pin-dots">
+    <div class="pin-dot" id="d0"></div>
+    <div class="pin-dot" id="d1"></div>
+    <div class="pin-dot" id="d2"></div>
+    <div class="pin-dot" id="d3"></div>
+  </div>
+  <div class="pin-keypad">
+    <button class="pin-key" onclick="pinPress('1')">1</button>
+    <button class="pin-key" onclick="pinPress('2')">2</button>
+    <button class="pin-key" onclick="pinPress('3')">3</button>
+    <button class="pin-key" onclick="pinPress('4')">4</button>
+    <button class="pin-key" onclick="pinPress('5')">5</button>
+    <button class="pin-key" onclick="pinPress('6')">6</button>
+    <button class="pin-key" onclick="pinPress('7')">7</button>
+    <button class="pin-key" onclick="pinPress('8')">8</button>
+    <button class="pin-key" onclick="pinPress('9')">9</button>
+    <div class="pin-key empty"></div>
+    <button class="pin-key" onclick="pinPress('0')">0</button>
+    <button class="pin-key del" onclick="pinDel()">⌫</button>
+  </div>
+  <div class="pin-error-msg" id="pin-err">Code incorrect — réessayez</div>
+</div>
+
 <div class="app" id="app">
 
 <!-- TOPBAR -->
@@ -1435,6 +1531,72 @@ window._pi=function(){
 // Fallback after 3s
 setTimeout(()=>{if(!window._done)window._pi();},3000);
 if(window.CJS===true)window._pi();
+</script>
+<script>
+/* ═══════════════════ PIN LOCK ═══════════════════ */
+(function(){
+  // ── Modifier le PIN ici ──
+  const CORRECT_PIN = '2606';
+  // ─────────────────────────
+
+  const SK = 'shl_unlocked';
+  let entered = '';
+
+  // If already unlocked in this session, skip
+  if(sessionStorage.getItem(SK) === '1'){
+    document.getElementById('pin-screen').style.display='none';
+    return;
+  }
+
+  function updateDots(){
+    for(let i=0;i<4;i++){
+      const d=document.getElementById('d'+i);
+      d.className='pin-dot'+(i<entered.length?' filled':'');
+    }
+  }
+
+  function showError(){
+    for(let i=0;i<4;i++) document.getElementById('d'+i).className='pin-dot error';
+    const msg=document.getElementById('pin-err');
+    msg.classList.add('show');
+    setTimeout(()=>{
+      entered='';
+      updateDots();
+      msg.classList.remove('show');
+    },1000);
+  }
+
+  function unlock(){
+    const screen=document.getElementById('pin-screen');
+    screen.classList.add('unlocking');
+    sessionStorage.setItem(SK,'1');
+    setTimeout(()=>{ screen.style.display='none'; },400);
+  }
+
+  window.pinPress=function(k){
+    if(entered.length>=4) return;
+    entered+=k;
+    updateDots();
+    if(entered.length===4){
+      if(entered===CORRECT_PIN){ unlock(); }
+      else { setTimeout(showError, 100); }
+    }
+  };
+
+  window.pinDel=function(){
+    if(entered.length>0){
+      entered=entered.slice(0,-1);
+      updateDots();
+    }
+  };
+
+  // Keyboard support
+  document.addEventListener('keydown',function(e){
+    if(document.getElementById('pin-screen').style.display==='none') return;
+    if(e.key>='0'&&e.key<='9') pinPress(e.key);
+    else if(e.key==='Backspace') pinDel();
+  });
+})();
 </script>
 </body>
 </html>
